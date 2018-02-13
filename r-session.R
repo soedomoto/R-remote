@@ -3,9 +3,15 @@ if (length(args)==0) {
   stop("First argument as \'port\' must be supplied.", call.=FALSE)
 }
 
-port <- args[1];
+port <- args[1]
+sess.id <- NULL
+
+if (length(args)==2) {
+  sess.id <- args[2]
+}
 
 library(rzmq)
+library(session)
 
 context = init.context()
 socket = init.socket(context, "ZMQ_REP")
@@ -38,4 +44,9 @@ while(1) {
     }
     
     send.socket(socket, resp);
+
+    if (!is.null(sess.id)) { 
+        dir.create("session/", showWarnings = FALSE, recursive = TRUE)
+        save.session(file=paste("session/", sess.id, ".RSession", sep=""))
+    }
 }

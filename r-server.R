@@ -1,4 +1,5 @@
 library(rzmq)
+library(session)
 library(uuid)
 
 port <- 5000
