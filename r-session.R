@@ -20,8 +20,6 @@ while(1) {
     args <- msg$args;    
     resp <- NULL;
 
-    print(cmd)
-
     if (!is.null(cmd)) { 
         if (grepl('<-', cmd)) {
             cat('[', port, ']', 'Executing command', cmd, '\n');
@@ -35,7 +33,7 @@ while(1) {
     } 
 
     else if (!is.null(func)) {
-        cat('[', port, ']', 'Calling function', func, '(', paste(args, collapse = ''), ')', '\n');
+        cat('[', port, ']', 'Calling function', func, '\n');
         resp <- do.call(func, args);
     }
     
