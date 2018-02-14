@@ -3,39 +3,61 @@ library(session)
 library(uuid)
 
 port <- 5000
+server.port = 5555
 context = init.context()
 socket = init.socket(context, "ZMQ_REP")
-bind.socket(socket, "tcp://*:5555")
+bind.socket(socket, paste("tcp://*:", server.port))
 
-print('Server is listening on port 5555')
+cat('[', server.port, ']', 'Server is listening on port 5555\n')
 
 session.port <- as.numeric(paste(port, 1, sep=""))
 session.id.socket <- list()
 
-init.session <- function() {
-    session.uuid = UUIDgenerate(use.time = TRUE)
+remote.call <- function(r.socket, func, args) {
+    send.socket(r.socket, data=list(func=func, args=args))
+    receive.socket(r.socket)
+}
 
-    cmd <- paste('Rscript', './r-session.R', session.port, session.uuid, sep=" ")
-    cat('Executing', cmd, '\n')
+remote.eval <- function(r.socket, cmd) {
+    send.socket(r.socket, data=list(cmd=cmd))
+    receive.socket(r.socket) 
+}
+
+init.session <- function(session.uuid=NULL) {
+    if (is.null(session.uuid)) {
+        session.uuid = UUIDgenerate(use.time = TRUE)
+    }
+
+    if (!is.null(session.id.socket[[ session.uuid ]])) {
+        return(session.id.socket[[ session.uuid ]])
+    }
+
+    broker.rep.port = 50011
+    broker.rep.uri = paste("tcp://localhost:", broker.rep.port, sep="")
+    broker.rep.context = init.context()
+    broker.rep.socket = init.socket(broker.rep.context, "ZMQ_REP")
+    bind.socket(broker.rep.socket, paste("tcp://*:", broker.rep.port, sep=""))
+
+    cat('[', server.port, ']', 'Waiting for server session', session.uuid, 'response...\n')
+
+    cmd <- paste('Rscript', './r-session.R', session.port, session.uuid, broker.rep.uri, sep=" ")
+    cat('[', server.port, ']', 'Executing', cmd, '\n')
     system(cmd, wait=FALSE)
 
-    context = init.context()
-    socket = init.socket(context,"ZMQ_REQ")
-    connect.socket(socket, paste("tcp://localhost:", session.port, sep=""))
-    session.id.socket[[ session.uuid ]] <<- socket
+    session.pong = receive.socket(broker.rep.socket)
+     if (!is.null(session.pong)) {
+        disconnect.socket(broker.rep.socket, broker.rep.uri)
 
-    session.port <<- session.port + 1
-    return(session.uuid)
-}
+        broker.req.context = init.context()
+        broker.req.socket = init.socket(broker.req.context,"ZMQ_REQ")        
+        if (connect.socket(broker.req.socket, paste("tcp://localhost:", session.port, sep=""))) {
+            cat('[', server.port, ']', 'Session server', session.uuid, 'now reachable\n')
 
-remote.call <- function(socket, func, args) {
-    send.socket(socket, data=list(func=func, args=args))
-    receive.socket(socket)
-}
-
-remote.eval <- function(socket, cmd) {
-    send.socket(socket, data=list(cmd=cmd))
-    receive.socket(socket) 
+            session.port <<- session.port + 1
+            session.id.socket[[ session.uuid ]] <<- broker.req.socket
+            return(broker.req.socket)
+        }
+     }
 }
 
 while(1) {
@@ -45,22 +67,15 @@ while(1) {
     func <- msg$func;
     args <- msg$args;    
     resp <- 'Failed';
+    
+    socket.session <- init.session(sess)
 
-    if (!is.null(sess)) {
-        socket.session <- session.id.socket[[sess]]
-    }
-
-    if (!is.null(cmd)) { 
+    if (!is.null(cmd)) {
         resp <- remote.eval(socket.session, cmd)
     } 
 
     else if (!is.null(func)) {
-        if ('init.session' == func) {
-            resp <- do.call(func, args);
-            Sys.sleep(2);
-        } else {
-            resp <- remote.call(socket.session, func, args);
-        }
+        resp <- remote.call(socket.session, func, args);
     }
     
     send.socket(socket, resp);
