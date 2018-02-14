@@ -5,7 +5,7 @@ context = init.context()
 socket = init.socket(context,"ZMQ_REQ")
 connect.socket(socket,"tcp://localhost:5555")
 
-sess.id <- '87d7b602-10ca-11e8-b177-1008b155cbfz'
+sess.id <- '87d7b602-10ca-11e8-b177-1008b155cbft'
 print(sess.id)
 
 

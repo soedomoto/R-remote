@@ -7,6 +7,13 @@ port <- args[1]
 sess.id <- args[2]
 broker.uri <- args[3]
 
+# RESTORING SESSION
+if (file.exists(paste("session/", sess.id, ".Rdata", sep=""))) {
+    cat('[', port, ']', 'Restoring session', paste("session/", sess.id, ".Rdata", sep=""), '\n')
+    load(file=paste("session/", sess.id, ".Rdata", sep=""))
+    cat('[', port, ']', 'Session', paste("session/", sess.id, ".Rdata", sep=""), 'is restored\n')
+}
+
 # STARTING SERVER ....
 library(rzmq)
 library(session)
@@ -14,14 +21,7 @@ library(session)
 context = init.context()
 socket = init.socket(context, "ZMQ_REP")
 bind.socket(socket, paste("tcp://*:", port, sep=""))
-
 cat('[', port, ']', 'Session server', sess.id, 'is listening on port ', port, '\n');
-
-if (file.exists(paste("session/", sess.id, ".Rdata", sep=""))) {
-    cat('[', port, ']', 'Restoring session', paste("session/", sess.id, ".Rdata", sep=""), '\n')
-    load(file=paste("session/", sess.id, ".Rdata", sep=""))
-    cat('[', port, ']', 'Session', paste("session/", sess.id, ".Rdata", sep=""), 'is restored\n')
-}
 
 # SEND NOTIFY TO BROKER
 broker.context = init.context()
@@ -30,7 +30,6 @@ if (connect.socket(broker.socket, broker.uri)) {
     cat('[', port, ']', 'Notifying broker', '\n');
     send.socket(broker.socket, data=list(str='pong'))
 }
-
 
 # READY TO ACCEPT MESSAGE
 while(1) {
