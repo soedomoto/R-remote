@@ -2,81 +2,74 @@ library(rzmq)
 library(session)
 library(uuid)
 
-port <- 5000
-server.port = 5555
-context = init.context()
-socket = init.socket(context, "ZMQ_REP")
-bind.socket(socket, paste("tcp://*:", server.port))
+template.port <- 5
+broker.port <- as.numeric(paste(template.port, '000', sep="")) # e.g: 5000
+session.port <- as.numeric(paste(template.port, '100', sep="")) # e.g: 5100
+session.hearbeat.server.port <- as.numeric(paste(template.port, '600', sep="")) # e.g: 5600
 
-cat('[', server.port, ']', 'Server is listening on port 5555\n')
+session.uuid.socket.map <- list()
 
-session.port <- as.numeric(paste(port, 1, sep=""))
-session.id.socket <- list()
+# STARTING SERVER ....
+broker.context.out = init.context()
+broker.socket.out = init.socket(broker.context.out, "ZMQ_REP")
+bind.socket(broker.socket.out, paste("tcp://*:", broker.port))
+cat('[', broker.port, ']', 'Server is listening on port', broker.port, '\n')
 
-remote.call <- function(r.socket, func, args) {
-    send.socket(r.socket, data=list(func=func, args=args))
-    receive.socket(r.socket)
-}
-
-remote.eval <- function(r.socket, cmd) {
-    send.socket(r.socket, data=list(cmd=cmd))
-    receive.socket(r.socket) 
-}
-
-init.session <- function(session.uuid=NULL) {
+# GET SESSION SOCKET, CREATE IF NOT EXISTS
+fn.remote.session <- function(session.uuid=NULL) {
     if (is.null(session.uuid)) {
         session.uuid = UUIDgenerate(use.time = TRUE)
     }
 
-    if (!is.null(session.id.socket[[ session.uuid ]])) {
-        return(session.id.socket[[ session.uuid ]])
+    # Return if there is already exists socket associated with session.uuid
+    if (!is.null(session.uuid.socket.map[[ session.uuid ]])) {
+        return(session.uuid.socket.map[[ session.uuid ]])
     }
 
-    broker.rep.port = 50011
-    broker.rep.uri = paste("tcp://localhost:", broker.rep.port, sep="")
-    broker.rep.context = init.context()
-    broker.rep.socket = init.socket(broker.rep.context, "ZMQ_REP")
-    bind.socket(broker.rep.socket, paste("tcp://*:", broker.rep.port, sep=""))
+    # Create if there is no socket associated with session.uuid
+    # Starting heartbeat server 
+    session.hearbeat.server.uri = paste("tcp://localhost:", session.hearbeat.server.port, sep="")
+    session.hearbeat.server.context = init.context()
+    session.hearbeat.server.socket = init.socket(session.hearbeat.server.context, "ZMQ_REP")
+    bind.socket(session.hearbeat.server.socket, paste("tcp://*:", session.hearbeat.server.port, sep=""))
 
-    cat('[', server.port, ']', 'Waiting for server session', session.uuid, 'response...\n')
+    cat('[', broker.port, ']', 'Waiting for server session', session.uuid, 'heartbeat...\n')
 
-    cmd <- paste('Rscript', './r-session.R', session.port, session.uuid, broker.rep.uri, sep=" ")
-    cat('[', server.port, ']', 'Executing', cmd, '\n')
+    # Invoke session server
+    cmd <- paste('Rscript', './r-session.R', session.port, session.uuid, session.hearbeat.server.uri, sep=" ")
+    cat('[', broker.port, ']', 'Executing', cmd, '\n')
     system(cmd, wait=FALSE)
 
-    session.pong = receive.socket(broker.rep.socket)
+    # Waiting for heartbeat
+    session.pong = receive.socket(session.hearbeat.server.socket)
      if (!is.null(session.pong)) {
-        disconnect.socket(broker.rep.socket, broker.rep.uri)
+        # If heartbeat received, kill the hearbeat server
+        # disconnect.socket(session.hearbeat.server.socket, session.hearbeat.server.uri)
+        session.hearbeat.server.port <<- session.hearbeat.server.port + 1
 
+        # Create new socket
         broker.req.context = init.context()
         broker.req.socket = init.socket(broker.req.context,"ZMQ_REQ")        
         if (connect.socket(broker.req.socket, paste("tcp://localhost:", session.port, sep=""))) {
-            cat('[', server.port, ']', 'Session server', session.uuid, 'now reachable\n')
+            cat('[', broker.port, ']', 'Session server', session.uuid, 'now reachable\n')
 
             session.port <<- session.port + 1
-            session.id.socket[[ session.uuid ]] <<- broker.req.socket
+            session.uuid.socket.map[[ session.uuid ]] <<- broker.req.socket
             return(broker.req.socket)
         }
      }
 }
 
 while(1) {
-    msg = receive.socket(socket);
-    sess <- msg$sess;
-    cmd <- msg$cmd;
-    func <- msg$func;
-    args <- msg$args;    
+    data = receive.socket(broker.socket.out);
+    sess.uuid <- data$sess;
     resp <- 'Failed';
     
-    socket.session <- init.session(sess)
-
-    if (!is.null(cmd)) {
-        resp <- remote.eval(socket.session, cmd)
-    } 
-
-    else if (!is.null(func)) {
-        resp <- remote.call(socket.session, func, args);
-    }
-    
-    send.socket(socket, resp);
+    # Get appropriate socket for specific session server
+    session.socket <- fn.remote.session(sess.uuid)
+    # Redirect data to specific session server
+    send.socket(session.socket, data=data)
+    # Redirect client to client
+    resp <- receive.socket(session.socket)     
+    send.socket(broker.socket.out, resp);
 }
