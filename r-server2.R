@@ -1,5 +1,4 @@
 library(rzmq)
-library(thread)
 library(session)
 library(uuid)
 
@@ -24,8 +23,8 @@ fn.remote.session <- function(session.uuid=NULL) {
     }
 
     # Return if there is already exists socket associated with session.uuid
-    if (!is.null(session.uuid.socket.map[[ session.uuid ]])) {
-        return(session.uuid.socket.map[[ session.uuid ]])
+    if (!is.null(session.uuid.session.map[[ session.uuid ]])) {
+        return(session.uuid.session.map[[ session.uuid ]])
     }
 
     # Create if there is no socket associated with session.uuid
@@ -50,34 +49,30 @@ fn.remote.session <- function(session.uuid=NULL) {
         session.hearbeat.server.port <<- session.hearbeat.server.port + 1
 
         # Create new socket
+        broker.req.addr = paste("tcp://localhost:", session.port, sep="")
         broker.req.context = init.context()
         broker.req.socket = init.socket(broker.req.context,"ZMQ_REQ")        
-        if (connect.socket(broker.req.socket, paste("tcp://localhost:", session.port, sep=""))) {
+        if (connect.socket(broker.req.socket, broker.req.addr)) {
             cat('[', broker.port, ']', 'Session server', session.uuid, 'now reachable\n')
 
             session.port <<- session.port + 1
             session.uuid.socket.map[[ session.uuid ]] <<- broker.req.socket
-            session.uuid.session.map[[ session.uuid ]] <<- paste("tcp://localhost:", session.port, sep="")
-            return(broker.req.socket)
+            session.uuid.session.map[[ session.uuid ]] <<- broker.req.addr
+            return(broker.req.addr)
         }
     }
-}
-
-thread.runner <- function (data) {
-    
 }
 
 while(1) {
     data = receive.socket(broker.socket.out);
     sess.uuid <- data$sess;
-    resp <- 'Failed';
     
     # Get appropriate socket for specific session server
-    session.socket <- fn.remote.session(sess.uuid)
+    session.addr <- fn.remote.session(sess.uuid)
     # Redirect data to specific session server
-    send.socket(session.socket, data=data)
+    # send.socket(session.socket, data=data)
     # Redirect client to client
     # Its block other worker, redesign it
-    resp <- receive.socket(session.socket)     
-    send.socket(broker.socket.out, resp);
+    # resp <- receive.socket(session.socket)     
+    send.socket(broker.socket.out, session.addr);
 }

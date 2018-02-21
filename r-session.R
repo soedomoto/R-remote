@@ -31,13 +31,8 @@ if (file.exists(session.filename)) {
     session.port <- args[1]
     session.id <- args[2]
     broker.uri <- args[3]
-    # session.workspace <- paste(script.dir(), '/workspace/', session.id, sep='')
-    # session.filename <- paste('session.Rdata', sep='')
 
     cat('[', session.port, ']', 'Session', session.filename, 'is restored\n')
-
-    # cat('WD', getwd(), session.workspace, '\n')
-    # if (getwd() != session.workspace) setwd(session.workspace)
 } 
 
 # Load all available modules (*.R)
@@ -72,9 +67,6 @@ while(1) {
     args <- data$args;    
     resp <- 'Failed';
 
-    # # Before execute, change working directory
-    # setwd(session.workspace)
-
     if (!is.null(cmd)) { 
         if (grepl('<-', cmd)) {
             cat('[', session.port, ']', 'Executing command', cmd, '\n');
@@ -91,10 +83,9 @@ while(1) {
         cat('[', session.port, ']', 'Calling function', func, '\n');
         resp <- do.call(func, args);
     }
-
-    # # After execute, set back to this dir
-    # setwd(dirname(script.path()))
     
     send.socket(session.socket.out, resp);
+
+    # Save session for next purpose
     save.image(file=session.filename)
 }
